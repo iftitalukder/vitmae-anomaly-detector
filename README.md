@@ -1,7 +1,12 @@
-echo "# ViT-MAE Anomaly Detector
+# ViT-MAE Anomaly Detector
 
-A plug-and-play Python script for unsupervised anomaly detection using Vision Transformers and recurrence plots.
+This repository contains a plug-and-play implementation of an unsupervised anomaly detection framework using Vision Transformers (ViT), Masked Autoencoders (MAE), and Mahalanobis distance. It supports univariate `.csv` time-series files and produces anomaly scores with visualization.
 
-## Run the script
+---
+
+## 📦 Dependencies
+
+Install all required Python packages:
+
 ```bash
-python pipeline.py your_timeseries.csv
+pip install torch torchvision timm scikit-learn scikit-image pandas numpy matplotlib
