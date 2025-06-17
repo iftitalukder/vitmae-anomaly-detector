@@ -5,8 +5,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
 from sklearn.covariance import EmpiricalCovariance
 import timm
-import torchvision.transforms as transforms
 from skimage.transform import resize
+import sys
+import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -72,3 +73,25 @@ def run_pipeline(csv_path, window_size=256, stride=64, epsilon=0.1, img_size=(22
     scores = score_mahalanobis(model, embeddings)
 
     return scores
+
+def plot_scores(scores):
+    plt.figure(figsize=(12, 4))
+    plt.plot(scores, label="Anomaly Score (Mahalanobis)")
+    plt.axhline(np.percentile(scores, 99), color='red', linestyle='--', label="99% Threshold")
+    plt.title("Anomaly Score Timeline")
+    plt.xlabel("Window Index")
+    plt.ylabel("Mahalanobis Distance")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+# Run directly from CLI
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python vitmae_anomaly_plug_and_play.py <your_timeseries.csv>")
+    else:
+        csv_file = sys.argv[1]
+        scores = run_pipeline(csv_file)
+        print("Top 10 Scores:", scores[:10])
+        plot_scores(scores)
