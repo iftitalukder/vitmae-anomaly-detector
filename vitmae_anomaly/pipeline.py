@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_and_window_timeseries(csv_path, window_size=256, stride=64, column=0):
-    data = pd.read_csv(csv_path)
+    data = pd.read_csv(csv_path, sep=None, engine="python")  # auto-detects delimiter
     series = data.iloc[:, column].values
     scaler = StandardScaler()
     series = scaler.fit_transform(series.reshape(-1, 1)).flatten()
