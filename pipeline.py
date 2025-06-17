@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+import sys
 import pandas as pd
 import numpy as np
 import torch
@@ -6,57 +8,96 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.covariance import EmpiricalCovariance
 import timm
 from skimage.transform import resize
-import sys
 import matplotlib.pyplot as plt
 
+# Device setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_and_window_timeseries(csv_path, window_size=256, stride=64, column=0):
+    """
+    Load a CSV (auto-detects comma or semicolon), select a numeric column,
+    normalize it, and split into overlapping windows.
+    """
     data = pd.read_csv(csv_path, sep=None, engine="python")  # auto-detects delimiter
     series = data.iloc[:, column].values
     scaler = StandardScaler()
     series = scaler.fit_transform(series.reshape(-1, 1)).flatten()
-    windows = [series[i:i+window_size] for i in range(0, len(series)-window_size+1, stride)]
+    windows = [series[i:i+window_size] 
+               for i in range(0, len(series)-window_size+1, stride)]
     return np.array(windows)
 
 def generate_rp_image(window, epsilon=0.1, img_size=(224, 224)):
+    """
+    Convert a 1D window into a 2D recurrence plot (RP) image.
+    """
     W = len(window)
-    R = np.zeros((W, W))
-    for i in range(W):
-        for j in range(W):
-            R[i, j] = np.abs(window[i] - window[j])
+    R = np.abs(window.reshape(-1,1) - window.reshape(1,-1))
     R = (R < epsilon).astype(float)
     R_resized = resize(R, img_size, anti_aliasing=True)
     return R_resized
 
-def get_cls_embeddings(rp_images, patch_size=16, batch_size=32):
+def get_cls_embeddings(rp_images, batch_size=32):
+    """
+    Use a pretrained ViT-B/16 model to extract [CLS] embeddings from RP images.
+    """
     model = timm.create_model("vit_base_patch16_224", pretrained=True)
     model.head = torch.nn.Identity()
-    model.to(device)
-    model.eval()
+    model.to(device).eval()
 
-    rp_images_rgb = np.repeat(rp_images[:, np.newaxis, :, :], 3, axis=1)
-    tensor_data = torch.tensor(rp_images_rgb, dtype=torch.float32)
-    dataset = TensorDataset(tensor_data)
-    loader = DataLoader(dataset, batch_size=batch_size)
+    # Expand to 3-channel and build DataLoader
+    rp_rgb = np.repeat(rp_images[:, None, :, :], 3, axis=1)
+    tensor_data = torch.tensor(rp_rgb, dtype=torch.float32)
+    loader = DataLoader(TensorDataset(tensor_data), batch_size=batch_size)
 
     embeddings = []
     with torch.no_grad():
         for (x,) in loader:
             x = x.to(device)
-            emb = model.forward_features(x)
-            embeddings.append(emb[:, 0].cpu().numpy())  # [CLS] token
+            feats = model.forward_features(x)
+            embeddings.append(feats[:, 0].cpu().numpy())  # [CLS] token
     return np.vstack(embeddings)
 
 def fit_mahalanobis_model(embeddings):
+    """
+    Fit a Gaussian (Mahalanobis) model on embeddings of normal data.
+    """
     model = EmpiricalCovariance()
     model.fit(embeddings)
     return model
 
 def score_mahalanobis(model, embeddings):
+    """
+    Compute Mahalanobis distance scores for each embedding.
+    """
     return model.mahalanobis(embeddings)
 
-def run_pipeline(csv_path, window_size=256, stride=64, epsilon=0.1, img_size=(224, 224), column=0):
+def plot_scores(scores, output_plot="score_plot.png"):
+    """
+    Plot the anomaly scores over window index and save the figure.
+    """
+    plt.figure(figsize=(12, 4))
+    plt.plot(scores, label="Anomaly Score")
+    thresh = np.percentile(scores, 99)
+    plt.axhline(thresh, color='red', linestyle='--', label="99th Percentile")
+    plt.title("Anomaly Score Timeline")
+    plt.xlabel("Window Index")
+    plt.ylabel("Mahalanobis Distance")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_plot)
+    plt.show()
+
+def run_pipeline(csv_path, column, window_size=256, stride=64, epsilon=0.1, img_size=(224,224)):
+    """
+    Full pipeline:
+    1. Load & window time-series
+    2. Generate recurrence plots
+    3. Extract ViT-MAE embeddings
+    4. Fit Mahalanobis model on embeddings
+    5. Score embeddings
+    6. Save scores & plot
+    """
     print("Loading and windowing time-series...")
     windows = load_and_window_timeseries(csv_path, window_size, stride, column)
 
@@ -69,29 +110,31 @@ def run_pipeline(csv_path, window_size=256, stride=64, epsilon=0.1, img_size=(22
     print("Fitting Mahalanobis model...")
     model = fit_mahalanobis_model(embeddings)
 
-    print("Scoring test embeddings...")
+    print("Scoring embeddings...")
     scores = score_mahalanobis(model, embeddings)
+
+    # Save scores
+    np.savetxt("anomaly_scores.csv", scores, delimiter=",")
+    print("Saved anomaly_scores.csv")
+
+    # Plot and save
+    plot_scores(scores)
+    print("Saved score_plot.png")
 
     return scores
 
-def plot_scores(scores):
-    plt.figure(figsize=(12, 4))
-    plt.plot(scores, label="Anomaly Score (Mahalanobis)")
-    plt.axhline(np.percentile(scores, 99), color='red', linestyle='--', label="99% Threshold")
-    plt.title("Anomaly Score Timeline")
-    plt.xlabel("Window Index")
-    plt.ylabel("Mahalanobis Distance")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-# Run directly from CLI
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python vitmae_anomaly_plug_and_play.py <your_timeseries.csv>")
-    else:
-        csv_file = sys.argv[1]
-        scores = run_pipeline(csv_file)
-        print("Top 10 Scores:", scores[:10])
-        plot_scores(scores)
+    if len(sys.argv) != 3:
+        print("Usage: python pipeline.py <your_file.csv> <column_index>")
+        print("Example: python pipeline.py valve1.csv 1")
+        sys.exit(1)
+
+    csv_file = sys.argv[1]
+    try:
+        col_idx = int(sys.argv[2])
+    except ValueError:
+        print("Error: <column_index> must be an integer (e.g., 1 for second column).")
+        sys.exit(1)
+
+    # Execute
+    run_pipeline(csv_file, column=col_idx)
