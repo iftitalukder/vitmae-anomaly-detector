@@ -1,16 +1,7 @@
-# vitmae-anomaly-detector
-# ViT-MAE for Unsupervised Anomaly Detection in Time Series
+echo "# ViT-MAE Anomaly Detector
 
-This repository contains the code for my IEEE paper:  
-**"Vision Transformer Masked Autoencoders for Unsupervised Anomaly Detection in Time Series"**
+A plug-and-play Python script for unsupervised anomaly detection using Vision Transformers and recurrence plots.
 
-## 🔍 Overview
-- Converts time-series to recurrence plots
-- Uses ViT-MAE (Vision Transformer Masked Autoencoder)
-- Scores anomalies using Mahalanobis distance on [CLS] token embeddings
-- Supports real-time inference, cross-domain generalization
-
-## 🚀 Getting Started
-
+## Run the script
 ```bash
-pip install -r requirements.txt
+python pipeline.py your_timeseries.csv
