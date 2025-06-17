@@ -11,10 +11,15 @@ Make sure it has at least one numeric column.
 
 #### Run the pipeline ####
 bash
+
 Copy
+
 Edit
+
 python pipeline.py <your_file.csv> <column_index>
+
 <your_file.csv>: name of your CSV
+
 <column_index>: zero-based index of the numeric column to analyze
 
 ### View results ####
